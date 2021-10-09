@@ -4,7 +4,6 @@ library(tximport)
 library(DESeq2)
 library(edgeR)
 library(dplyr)
-library(io)
 
 #---- set up parameters --------------------------------------------------------
 project <- 'test' # name of project
