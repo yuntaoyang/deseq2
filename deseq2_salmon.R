@@ -6,6 +6,7 @@ library(edgeR)
 library(dplyr)
 library(AnnotationDbi)
 library(org.Hs.eg.db)
+library(clusterProfiler)
 
 #---- set up parameters --------------------------------------------------------
 project <- 'test' # name of project
@@ -13,6 +14,7 @@ condition_1 <- 'Smoke_KO'
 condition_2 <- 'Smoke_Control'
 cutoff_fdr <- 0.05
 cutoff_logFC <- 1
+cutoff_gsea <- 0.25
 
 #---- set up path --------------------------------------------------------------
 path_tx2gene <- '/Users/yyang18/Google Drive/Data/tx2gene/' # path to tx2gene
@@ -72,15 +74,48 @@ res_diff = subset(res, change == 'Up' | change == 'Down')
 write.csv(res_diff,paste0(path_output_raw,project,'_diff.csv'), row.names=FALSE) # differentially expressed genes
 heatmap = logcpm_z[res_diff$gene_name,]
 write.csv(heatmap,paste0(path_output_raw,project,'_heatmap.csv')) # input of heatmap 
-res$gene_name[res$change == 'Not Sig'] <- ''
-write.csv(res,paste0(path_output_raw,project,'_volcano.csv'), row.names = FALSE) # input of volcano plot
+res_vol <- res
+res_vol$gene_name[res_vol$change == 'NS'] <- ''
+write.csv(res_vol,paste0(path_output_raw,project,'_volcano.csv'), row.names = FALSE) # input of volcano plot
 
-#---- output_report ------------------------------------------------------------
-res <- res %>%
+#---- output_report_DEG --------------------------------------------------------
+res_deg <- res %>%
   filter(change=='Up'|change=='Down') %>%
   dplyr::select(-c('baseMean','lfcSE','stat'))
-annotation <- AnnotationDbi::select(org.Hs.eg.db, keys=res$gene_name, columns=c("GENENAME"), keytype="SYMBOL")
+annotation <- AnnotationDbi::select(org.Hs.eg.db, keys=res_deg$gene_name, columns=c("GENENAME"), keytype="SYMBOL")
 colnames(annotation) <- c("gene_name","description")
-res <- merge(res,annotation)
-write.csv(res,paste0(path_output_report,project,'_gene.csv'), row.names = FALSE) # reprot of DEGs
+res_deg <- merge(res_deg,annotation)
+write.csv(res_deg,paste0(path_output_report,project,'_gene.csv'), row.names = FALSE) # reprot of DEGs
+
+#---- output_report_GO ---------------------------------------------------------
+gene_go <- res$stat
+names(gene_go) <- as.character(res$gene_name) #named vector
+gene_go <- sort(gene_go,decreasing=T) #decreasing order
+gseaGO <- gseGO(gene_go, OrgDb=org.Hs.eg.db,
+                ont='BP',keyType="SYMBOL",pAdjustMethod = "BH",
+                minGSSize=10, maxGSSize=500,eps=0,
+                pvalueCutoff=1, verbose=FALSE, by="fgsea")
+write.csv(gseaGO,paste0(path_output_raw,project,'_go.csv'), row.names = FALSE) # GO GSEA output raw
+egseGO_filter <- gseaGO %>%
+  filter(p.adjust < cutoff_gsea) %>%
+  select(-c('rank','leading_edge'))
+write.csv(egseGO_filter,paste0(path_output_report,project,'_go_report.csv'), row.names = FALSE) # GO GSEA output report
+
+#---- output_report_KEGG -------------------------------------------------------
+gene_tx <- bitr(names(gene_go),fromType="SYMBOL",toType=c("ENTREZID"),
+                 OrgDb = org.Hs.eg.db)
+colnames(gene_tx)[1] <- "gene_name"
+gene_tx <- merge(gene_tx,res,by="gene_name")
+gene_kegg <- gene_tx$stat
+names(gene_kegg) <- as.character(gene_tx$ENTREZID) #named vector
+gene_kegg <- sort(gene_kegg,decreasing=T) #decreasing order
+egseKEGG <- gseKEGG(gene_kegg,organism='hsa',keyType="kegg",
+                    minGSSize=10, maxGSSize=500,eps=0,
+                    pvalueCutoff=1, pAdjustMethod = "BH",
+                    verbose=FALSE, by="fgsea")
+write.csv(egseKEGG,paste0(path_output_raw,project,'_kegg.csv'), row.names = FALSE) # KEGG GSEA output raw
+egseKEGG_filter <- egseKEGG %>%
+  filter(p.adjust < cutoff_gsea) %>%
+  select(-c('rank','leading_edge'))
+write.csv(egseKEGG_filter,paste0(path_output_report,project,'_kegg_report.csv'), row.names = FALSE) # KEGG GSEA output report
 
