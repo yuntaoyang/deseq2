@@ -31,7 +31,7 @@ dir.create(path_output_report)
 #---- read files ---------------------------------------------------------------
 tx2gene <- read.csv(paste0(path_tx2gene,'gencode.v37.annotation.csv'), row.names = 1)
 group <- read.csv(paste0(path_input_data,'group.csv'), header=TRUE) # sample & condition
-annotation = read.csv(paste0(path_annotation,'gencode_v37_gene_annotation.csv'))
+annotation = read.csv(paste0(path_annotation,'gencode_v37_gene_annotation.csv')) # gencode gene annotation
 
 #---- build ddsTxi -------------------------------------------------------------
 rownames(group) <- group$sample
@@ -54,9 +54,9 @@ logcpm <- cpm(y, log=TRUE)
 row_name <- data.frame(gene_id = row.names(logcpm)) %>%
             merge(annotation)
 row.names(logcpm) <- row_name$gene_name
-write.csv(logcpm, paste0(path_output_raw,project,'_logcpm.csv')) # logcpm matrix
+write.csv(logcpm, paste0(path_output_raw,project,'_logcpm.csv')) # logcpm matrix for output raw
 logcpm_z <- t(scale(t(logcpm)))
-write.csv(logcpm_z, paste0(path_output_raw,project,'_logcpm_z.csv')) # logcpm z normalized matrix
+write.csv(logcpm_z, paste0(path_output_raw,project,'_logcpm_z.csv')) # logcpm z normalized matrix for output raw
 
 #---- differential analysis ----------------------------------------------------
 ddsTxi <- DESeq(ddsTxi)
@@ -67,25 +67,26 @@ res <- merge(res,annotation) %>%
        subset(select = c(1,8,9,2,3,4,5,6,7))
 res$change = ifelse(res$padj < cutoff_fdr & res$log2FoldChange > cutoff_logFC,'Up',
                     ifelse(res$padj < cutoff_fdr & res$log2FoldChange < -cutoff_logFC,'Down','NS'))
-write.csv(res, paste0(path_output_raw,project,'_deseq2.csv'), row.names = FALSE) # result of deseq2
+res$gene_id <- substr(res$gene_id,1,15)
+write.csv(res, paste0(path_output_raw,project,'_deseq2.csv'), row.names = FALSE) # result of deseq2 for output raw
 gsea <- dplyr::select(res,'gene_name','stat')
-write.table(gsea,paste0(path_output_raw,project,'_gsea.rnk'), row.names = FALSE, sep='\t') # input of gsea
+write.table(gsea,paste0(path_output_raw,project,'_gsea.rnk'), row.names = FALSE, sep='\t') # input of gsea for output raw
 res_diff = subset(res, change == 'Up' | change == 'Down')
-write.csv(res_diff,paste0(path_output_raw,project,'_diff.csv'), row.names=FALSE) # differentially expressed genes
+write.csv(res_diff,paste0(path_output_raw,project,'_diff.csv'), row.names=FALSE) # differentially expressed genes for output raw
 heatmap = logcpm_z[res_diff$gene_name,]
-write.csv(heatmap,paste0(path_output_raw,project,'_heatmap.csv')) # input of heatmap 
+write.csv(heatmap,paste0(path_output_raw,project,'_heatmap.csv')) # input of heatmap for output raw
 res_vol <- res
 res_vol$gene_name[res_vol$change == 'NS'] <- ''
-write.csv(res_vol,paste0(path_output_raw,project,'_volcano.csv'), row.names = FALSE) # input of volcano plot
+write.csv(res_vol,paste0(path_output_raw,project,'_volcano.csv'), row.names = FALSE) # input of volcano plot for output raw
 
 #---- output_report_DEG --------------------------------------------------------
 res_deg <- res %>%
   filter(change=='Up'|change=='Down') %>%
   dplyr::select(-c('baseMean','lfcSE','stat'))
-annotation <- AnnotationDbi::select(org.Hs.eg.db, keys=res_deg$gene_name, columns=c("GENENAME"), keytype="SYMBOL")
-colnames(annotation) <- c("gene_name","description")
-res_deg <- merge(res_deg,annotation)
-write.csv(res_deg,paste0(path_output_report,project,'_gene.csv'), row.names = FALSE) # reprot of DEGs
+full_name <- AnnotationDbi::select(org.Hs.eg.db, keys=res_deg$gene_id, columns=c("GENENAME"), keytype="ENSEMBL")
+colnames(full_name) <- c("gene_id","description")
+res_deg <- merge(res_deg,full_name)
+write.csv(res_deg,paste0(path_output_report,project,'_gene.csv'), row.names = FALSE) # differentially expressed genes for output report
 
 #---- output_report_GO ---------------------------------------------------------
 gene_go <- res$stat
